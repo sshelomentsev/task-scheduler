@@ -1,10 +1,9 @@
 package com.sshelomentsev.scheduler;
 
+import com.sshelomentsev.scheduler.model.Task;
+
 import java.time.LocalDateTime;
-import java.util.Date;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -14,24 +13,15 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Scheduler {
 
     private ConcurrentHashMap<Long, CopyOnWriteArrayList<Task>> map = new ConcurrentHashMap<>();
-    private final int executionThreadsNumber;
     private final SchedulerThread thread;
+    private final ReentrantLock lock = new ReentrantLock();
 
     /**
      * Creates a new scheduler
-     * @param executionThreadsNumber Number of execution threads
-     */
-    public Scheduler(final int executionThreadsNumber) {
-        this.executionThreadsNumber = executionThreadsNumber;
-        this.thread = new SchedulerThread();
-        thread.start();
-    }
-
-    /**
-     * Creates a new single thread scheduler
      */
     public Scheduler() {
-        this(1);
+        this.thread = new SchedulerThread();
+        thread.start();
     }
 
     /**
@@ -49,26 +39,23 @@ public class Scheduler {
      * terminates this scheduler and all it's execution threads.
      */
     public void shutdown() {
-        thread.cancel();
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            thread.cancel();
+        } finally {
+            lock.unlock();
+        }
     }
 
     class SchedulerThread extends Thread {
 
-        private static final int TIMEOUT = 500000;
+        private static final int timeout = 500_000;
 
         private final ReentrantLock lock = new ReentrantLock();
         private final Condition available = lock.newCondition();
         private volatile boolean newTasksMayBeScheduled = true;
-        private Timer[] timers;
-        private List<Task> currentQueue;
-
-        SchedulerThread() {
-            this.currentQueue = new CopyOnWriteArrayList<>();
-            this.timers = new Timer[executionThreadsNumber];
-            for (int i = 0; i < executionThreadsNumber; i++) {
-                this.timers[i] = new Timer();
-            }
-        }
+        private List<Task> currentQueue = new CopyOnWriteArrayList<>();
 
         public void run() {
             newTasksMayBeScheduled = true;
@@ -100,24 +87,14 @@ public class Scheduler {
             try {
                 while (true) {
                     if (!newTasksMayBeScheduled) {
-                        cancelTimers();
+                        currentQueue.clear();
                         return;
                     }
                     if (!currentQueue.isEmpty()) {
-                        for (int i = 0; i < executionThreadsNumber; i++) {
-                            if (currentQueue.size() > 0) {
-                                Task task = currentQueue.remove(0);
-                                Date date = new Date(task.getTimestamp());
-                                timers[i].schedule(new TimerTask() {
-                                    @Override
-                                    public void run() {
-                                        task.run();
-                                    }
-                                }, date);
-                            }
-                        }
+                        Task task = currentQueue.remove(0);
+                        task.run();
                     }
-                    if (currentQueue.size() < executionThreadsNumber) {
+                    if (currentQueue.isEmpty()) {
                         long currTimestamp = System.currentTimeMillis();
                         for (long ts = prevTimestamp + 1; ts <= currTimestamp; ts++) {
                             currentQueue.addAll(map.getOrDefault(ts, new CopyOnWriteArrayList<>()));
@@ -125,17 +102,11 @@ public class Scheduler {
                         }
                         prevTimestamp = currTimestamp;
                     }
-                    available.awaitNanos(TIMEOUT);
+                    available.awaitNanos(timeout);
                 }
             } catch (Exception ignored) {
             } finally {
                 lock.unlock();
-            }
-        }
-
-        private void cancelTimers() {
-            for (int i = 0; i < executionThreadsNumber; i++) {
-                timers[i].cancel();
             }
         }
 

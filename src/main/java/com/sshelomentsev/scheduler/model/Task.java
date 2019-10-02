@@ -1,11 +1,17 @@
-package com.sshelomentsev.scheduler;
+package com.sshelomentsev.scheduler.model;
+
+import org.apache.log4j.Logger;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.TimerTask;
 import java.util.concurrent.Callable;
 
-public class Task extends TimerTask {
+/**
+ * This class is an internal representation of <LocalDateTime, Callable> pair
+ */
+public class Task {
+
+    private static final Logger logger = Logger.getLogger(Task.class);
 
     private final LocalDateTime time;
     private final Callable callable;
@@ -19,12 +25,12 @@ public class Task extends TimerTask {
         return time.toInstant(ZoneOffset.UTC).toEpochMilli();
     }
 
-    @Override
-    public void run() {
+    public void run(){
         try {
             callable.call();
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Task failed during execution", e);
         }
     }
+
 }
