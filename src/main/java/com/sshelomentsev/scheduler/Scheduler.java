@@ -10,6 +10,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Task scheduler
+ */
 public class Scheduler {
 
     private ConcurrentHashMap<Long, CopyOnWriteArrayList<Task>> map = new ConcurrentHashMap<>();
@@ -69,7 +72,7 @@ public class Scheduler {
         }
 
         /**
-         * Terminate timers, discarding any currently scheduled tasks
+         * Discarding any currently scheduled tasks
          */
         void cancel() {
             newTasksMayBeScheduled = false;
