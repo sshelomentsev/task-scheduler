@@ -5,8 +5,10 @@ import com.sshelomentsev.scheduler.model.Task;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -15,7 +17,8 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class Scheduler {
 
-    private ConcurrentHashMap<Long, CopyOnWriteArrayList<Task>> map = new ConcurrentHashMap<>();
+    private ConcurrentSkipListMap<Long, CopyOnWriteArrayList<Task>> map = new ConcurrentSkipListMap<>();
+
     private final SchedulerThread thread;
     private final ReentrantLock lock = new ReentrantLock();
 
@@ -35,6 +38,7 @@ public class Scheduler {
     public void schedule(LocalDateTime dateTime, Callable callable) {
         Task task = new Task(dateTime, callable);
         map.computeIfAbsent(task.getTimestamp(), s -> new CopyOnWriteArrayList<>()).add(task);
+        thread.newTaskAdded();
     }
 
     /**
@@ -53,8 +57,6 @@ public class Scheduler {
 
     class SchedulerThread extends Thread {
 
-        private static final int timeout = 500_000;
-
         private final ReentrantLock lock = new ReentrantLock();
         private final Condition available = lock.newCondition();
         private volatile boolean newTasksMayBeScheduled = true;
@@ -68,6 +70,20 @@ public class Scheduler {
             } finally {
                 newTasksMayBeScheduled = false;
                 currentQueue.clear();
+            }
+        }
+
+        /**
+         * Wake up a thread that's waiting on the available condition
+         */
+        void newTaskAdded() {
+            final ReentrantLock lock = this.lock;
+            lock.lock();
+            try {
+                available.signal();
+            } catch (Exception ignored) {
+            } finally {
+                lock.unlock();
             }
         }
 
@@ -86,7 +102,6 @@ public class Scheduler {
         private void mainLoop() throws InterruptedException {
             final ReentrantLock lock = this.lock;
             lock.lockInterruptibly();
-            long prevTimestamp = System.currentTimeMillis();
             try {
                 while (true) {
                     if (!newTasksMayBeScheduled) {
@@ -98,14 +113,26 @@ public class Scheduler {
                         task.run();
                     }
                     if (currentQueue.isEmpty()) {
-                        long currTimestamp = System.currentTimeMillis();
-                        for (long ts = prevTimestamp + 1; ts <= currTimestamp; ts++) {
-                            currentQueue.addAll(map.getOrDefault(ts, new CopyOnWriteArrayList<>()));
-                            map.remove(ts);
+                        if (map.isEmpty()) {
+                            available.await();
+                        } else {
+                            long currTimestamp = System.currentTimeMillis();
+
+                            ConcurrentNavigableMap<Long, CopyOnWriteArrayList<Task>> newTasks
+                                    = map.headMap(currTimestamp, true);
+                            newTasks.values().forEach(v -> currentQueue.addAll(v));
+                            newTasks.keySet().forEach(k -> map.remove(k));
+
+                            if (currentQueue.isEmpty()) {
+                                if (map.isEmpty()) {
+                                    available.await();
+                                } else {
+                                    long awaitTimeout = map.firstKey() - currTimestamp;
+                                    available.await(awaitTimeout, TimeUnit.MILLISECONDS);
+                                }
+                            }
                         }
-                        prevTimestamp = currTimestamp;
                     }
-                    available.awaitNanos(timeout);
                 }
             } catch (Exception ignored) {
             } finally {
