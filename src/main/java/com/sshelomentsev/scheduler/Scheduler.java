@@ -1,7 +1,5 @@
 package com.sshelomentsev.scheduler;
 
-import com.sshelomentsev.scheduler.model.Task;
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -36,7 +34,10 @@ public class Scheduler {
      * @param callable callable to be executed
      */
     public void schedule(LocalDateTime dateTime, Callable callable) {
-        Task task = new Task(dateTime, callable);
+        schedule(new Task(dateTime, callable));
+    }
+
+    void schedule(Task task) {
         map.computeIfAbsent(task.getTimestamp(), s -> new CopyOnWriteArrayList<>()).add(task);
         thread.newTaskAdded();
     }
@@ -81,7 +82,6 @@ public class Scheduler {
             lock.lock();
             try {
                 available.signal();
-            } catch (Exception ignored) {
             } finally {
                 lock.unlock();
             }
@@ -124,17 +124,12 @@ public class Scheduler {
                             newTasks.keySet().forEach(k -> map.remove(k));
 
                             if (currentQueue.isEmpty()) {
-                                if (map.isEmpty()) {
-                                    available.await();
-                                } else {
-                                    long awaitTimeout = map.firstKey() - currTimestamp;
-                                    available.await(awaitTimeout, TimeUnit.MILLISECONDS);
-                                }
+                                long awaitTimeout = map.firstKey() - currTimestamp;
+                                available.await(awaitTimeout, TimeUnit.MILLISECONDS);
                             }
                         }
                     }
                 }
-            } catch (Exception ignored) {
             } finally {
                 lock.unlock();
             }

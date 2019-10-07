@@ -1,4 +1,4 @@
-package com.sshelomentsev.scheduler.model;
+package com.sshelomentsev.scheduler;
 
 import org.apache.log4j.Logger;
 
@@ -9,26 +9,35 @@ import java.util.concurrent.Callable;
 /**
  * This class is an internal representation of <LocalDateTime, Callable> pair
  */
-public class Task {
+class Task {
 
     private static final Logger logger = Logger.getLogger(Task.class);
 
     private final LocalDateTime time;
     private final Callable callable;
+    private volatile TaskState state;
 
-    public Task(LocalDateTime time, Callable callable) {
+    Task(LocalDateTime time, Callable callable) {
         this.time = time;
         this.callable = callable;
+        this.state = TaskState.CREATED;
     }
 
-    public long getTimestamp() {
+    long getTimestamp() {
         return time.toInstant(ZoneOffset.UTC).toEpochMilli();
     }
 
-    public void run(){
+    TaskState getState() {
+        return state;
+    }
+
+    void run() {
         try {
+            state = TaskState.RUNNING;
             callable.call();
+            state = TaskState.FINISHED;
         } catch (Exception e) {
+            state = TaskState.FAILED;
             logger.error("Task failed during execution", e);
         }
     }
