@@ -23,7 +23,7 @@ public class ExecutionOrderTest extends SchedulerTestCase {
      * @throws InterruptedException
      */
     @Test
-    public void test() throws InterruptedException {
+    public void executionOrderTest() throws InterruptedException {
         LocalDateTime d = LocalDateTime.now(ZoneId.of("UTC")).plusNanos(100_000_000);
 
         for (int i = 0; i < TASKS_COUNT; i++) {
