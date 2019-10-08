@@ -59,7 +59,7 @@ public class App {
 
         Thread t = new Thread(() -> {
             try {
-                Thread.sleep(40000);
+                Thread.sleep(10000);
                 logger.info("Call scheduler shutdown");
                 scheduler.shutdown();
             } catch (InterruptedException e) {

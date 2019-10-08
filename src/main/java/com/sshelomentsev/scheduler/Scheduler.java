@@ -104,15 +104,13 @@ public class Scheduler {
             lock.lockInterruptibly();
             try {
                 while (true) {
-                    if (!newTasksMayBeScheduled) {
-                        currentQueue.clear();
-                        return;
-                    }
                     if (!currentQueue.isEmpty()) {
                         Task task = currentQueue.remove(0);
                         task.run();
-                    }
-                    if (currentQueue.isEmpty()) {
+                    } else {
+                        if (!newTasksMayBeScheduled) {
+                            return;
+                        }
                         if (map.isEmpty()) {
                             available.await();
                         } else {
